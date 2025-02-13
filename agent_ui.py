@@ -1,6 +1,9 @@
+import folium
+import json
 import streamlit as st
 import uuid
 from enum import Enum
+from streamlit_folium import folium_static
 
 from bedrock_agent_helper import EventType
 from intialize_agent import initialize
@@ -17,18 +20,53 @@ class State(str, Enum):
     FINISH = "FINISH"
     ROC = "ROC"
 
-def generate_response_from_agent(input_text: str, final_text_placeholder):
+def parse_message(message):
+    try:
+        data = json.loads(message)
+        text = data.get("text", message)
+        locations = data.get("locations", None)
+    except (json.JSONDecodeError, TypeError):
+        text = message
+        locations = None
+    return text, locations
+
+def create_map(locations):
+    m = folium.Map()
+    for location in locations:
+        folium.Marker(
+            [location['lat'], location['lng']],
+            icon=folium.DivIcon(
+                html=f"""
+                <div style="white-space: nowrap; font-size: 14px; color: black; font-weight: bold; text-shadow: 1px 0 white, -1px 0 white, 0 1px white, 0 -1px white;">
+                  <img src="https://ss0.4sqi.net/img/leaflet/images/marker-icon-ed9aa0b76a58a5a016efad37b874348e.png" style="vertical-align: middle; width: 16px; height: 24px;">
+                  {location['name']}
+                </div>"""
+            )
+        ).add_to(m)
+    bounds = [[location['lat'], location['lng']] for location in locations]
+    m.fit_bounds(bounds)
+    return m
+
+def generate_response_from_agent(input_text: str, final_text_placeholder, map_placeholder):
     completion_event = None
+
     for event in agent.invoke_agent(input_text, session_attributes=session_attributes):
         if event.type != EventType.COMPLETION:
             yield event
         else:
             completion_event = event
 
+    text, locations = parse_message(completion_event.data)
+
     with final_text_placeholder:
         with st.container(border=True):
             with st.chat_message(name="assistant"):
-                st.write(f"Assistant: {completion_event.data}")
+                st.write(f"Assistant: {text}")
+
+    if locations:
+        map_object = create_map(locations)
+        with map_placeholder:
+            folium_static(map_object, width=500, height=300)
     return completion_event
 
 # Create two columns
@@ -45,12 +83,13 @@ with st.container(border=True):
         human_placeholder = st.empty()
         image_placeholder = st.empty()
         final_text_placeholder = st.empty()
+        map_placeholder = st.empty()
         human_placeholder.container(border=True).chat_message(name="human").write(prompt)
         status_bar = st.status("Invoking agent...", expanded=True)
         response_container = st.empty()
         # Stream the response
         responses = []
-        for event in generate_response_from_agent(prompt, final_text_placeholder):
+        for event in generate_response_from_agent(prompt, final_text_placeholder, map_placeholder):
             responses.append(event)
             response_container.container().empty()
             with response_container.container(border=True, height=600):

@@ -32,23 +32,28 @@ def submit_request(endpoint: str, params: dict[str, str], version20241206: bool)
             #return "Lake Washington Park; Summit at Snoqualmie Skiing; Rocket Bowling", None
 
 @bedrock_agent_tool(action_group="LocationToolsActionGroup")
-def search_near(what: str, where: str=None) -> str:
+def search_near(what: str, where: str=None, ll: str=None, radius: int=1600) -> str:
     """Search for places near a particular named region or point. Either the
     region must be specified with the near parameter, or a circle around a point
     must be specified with the ll and radius parameters.
 
-    Always call me with a named region and not a latitude or longitude. If you have a latitude and longitude,
-    then call sn.
+    Call with either where or ll/radius, but not both.
 
     Args:
         what: concept you are looking for (e.g., coffee shop, Hard Rock Cafe)
         where: a geographic region (e.g., Los Angeles or Fort Greene), this must be a named region.
+        ll: comma separate latitude and longitude pair (e.g., 40.74,-74.0)
+        radius: radius in meters around the point specified by ll
     """
     params = {
         "query": what,
         "limit": 5,
-        "near": where
     }
+    if where:
+        params["near"] = where
+    if ll:
+        params["ll"] = ll
+        params["radius"] = radius
 
     return submit_request("/places/search", params, version20241206=True)
 
