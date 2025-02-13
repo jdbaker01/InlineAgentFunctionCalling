@@ -1,23 +1,23 @@
 import inspect
 from functools import wraps
+from typing import Optional, Dict, Any
 
 # Store decorated functions
 _decorated_functions = []
 
-import inspect
-from functools import wraps
-from typing import Optional, Dict, Any
 
-# Store decorated functions
+def bedrock_agent_tool(action_group: Optional[str] = None):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
 
-def bedrock_agent_tool(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
+        # Store the function and its metadata
+        func._action_group = action_group
+        _decorated_functions.append(func)
+        return wrapper
 
-    # Store the function and its parameters
-    _decorated_functions.append(func)
-    return wrapper
+    return decorator
 
 
 def parse_docstring(docstring: Optional[str]) -> tuple[str, Dict[str, str]]:
@@ -111,7 +111,8 @@ def get_bedrock_tools(include_callable=True):
         tool_info = {
             'function': func.__name__,
             'description': description,
-            'parameters': parameters
+            'parameters': parameters,
+            'action_group': getattr(func, '_action_group', None)  # Get action_group if it exists
         }
 
         if include_callable:
@@ -121,8 +122,7 @@ def get_bedrock_tools(include_callable=True):
     return tools
 
 
-
-def invoke_tool(function_to_call:dict):
+def invoke_tool(function_to_call: dict):
     tools = get_bedrock_tools()
     for tool in tools:
         if tool['function'] == function_to_call['function']:
@@ -131,17 +131,17 @@ def invoke_tool(function_to_call:dict):
     return None, f"Error no function exists by name {function_to_call['function']}"
 
 
-def convert_tools_to_function_schema(tools: list) -> dict:
+def convert_tools_to_function_schema(tools: list) -> list:
     """
-    Convert tools metadata to function schema format.
+    Convert tools metadata to function schema format, grouped by action groups.
 
     Args:
         tools: List of tool metadata from get_bedrock_tools()
     Returns:
-        dict: Function schema in the required format
+        list: List of action group schemas, each containing function schemas
     """
+    # First convert tools to base function schemas
     converted_functions = []
-
     for tool in tools:
         # Convert parameters to required format
         parameters = {}
@@ -158,17 +158,36 @@ def convert_tools_to_function_schema(tools: list) -> dict:
                 'required': param['required']
             }
 
+        # Create function schema without actionGroupName
         function_data = {
             'name': tool['function'],
             'description': tool['description'],
             'parameters': parameters
         }
-        converted_functions.append(function_data)
+        # Store with action group for grouping, but don't include in final function schema
+        converted_functions.append((tool.get('action_group'), function_data))
 
-    return {
-            'functions': converted_functions
-    }
+    # Group functions by action group
+    action_groups = {}
+    for action_group, func_data in converted_functions:
+        if action_group:
+            if action_group not in action_groups:
+                action_groups[action_group] = []
+            action_groups[action_group].append(func_data)
 
+    # Create final schema structure
+    result = []
+    for action_group, functions in action_groups.items():
+        schema = {
+            'actionGroupName': action_group,
+            'actionGroupExecutor': {'customControl': 'RETURN_CONTROL'},
+            'functionSchema': {
+                'functions': functions
+            }
+        }
+        result.append(schema)
+
+    return result
 
 def parse_function_parameters(data):
     """
@@ -183,6 +202,7 @@ def parse_function_parameters(data):
     """
     function_to_call = {}
     function_to_call['invocationId'] = data['invocationId']
+
     def recursive_extract(obj):
         if isinstance(obj, dict):
             # Check if we've found a functionInvocationInput

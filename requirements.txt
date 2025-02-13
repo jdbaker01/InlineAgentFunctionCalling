@@ -3,3 +3,6 @@ yfinance
 pandas
 langchain
 langgraph
+geocoder
+streamlit
+

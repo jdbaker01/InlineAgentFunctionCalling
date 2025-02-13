@@ -6,17 +6,17 @@ from bedrock_agent_helper import BedrockAgent
 from function_calls import get_bedrock_tools, convert_tools_to_function_schema
 from location_tools import search_near
 
-# Example usage:
-if __name__ == "__main__":
-    # Get the bedrock tools and convert to function schema
-    tools = get_bedrock_tools()
-    action_groups_schema = convert_tools_to_function_schema(tools)
 
-    #print(json.dumps(action_groups_schema, indent=4))
+# Get the bedrock tools and convert to function schema
+tools = get_bedrock_tools()
+action_groups_schema = convert_tools_to_function_schema(tools)
 
+#print(json.dumps(action_groups_schema, indent=4))
+
+def initialize(session_id: str):
     # Initialize the agent
     agent = BedrockAgent(
-        session_id=str(uuid.uuid4()),
+        session_id=session_id,
         model_id="us.amazon.nova-pro-v1:0",
         action_groups=action_groups_schema,
         instructions="""
@@ -32,13 +32,4 @@ if __name__ == "__main__":
         'radius': '100',
     }
 
-    while True:
-        command = input("Enter a command (or 'quit' to exit): ")
-        if command.lower() == 'quit':
-            break
-        # Make a query
-        response = agent.invoke_agent(
-            command,
-            session_attributes
-        )
-        print(response)
+    return agent, session_attributes

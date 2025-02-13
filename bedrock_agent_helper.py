@@ -1,8 +1,26 @@
 import boto3
 import json
-from typing import Dict, Any, Tuple, Optional
-
+import asyncio
+from typing import Dict, Any, Tuple, Optional, Generator, Union, AsyncGenerator
+from dataclasses import dataclass
+from enum import Enum
+from types import TracebackType
+from typing_extensions import Self  # For Python < 3.11
 from function_calls import parse_function_parameters, invoke_tool
+
+# Define event types
+class EventType(Enum):
+    CHUNK = "chunk"
+    TRACE = "trace"
+    FUNCTION_CALL = "function_call"
+    FUNCTION_RESULT = "function_result"
+    ERROR = "error"
+    COMPLETION = "completion"
+
+@dataclass
+class AgentEvent:
+    type: EventType
+    data: Any
 
 class BedrockAgent:
     def __init__(
@@ -13,15 +31,7 @@ class BedrockAgent:
             instructions: str,
             region_name: str = "us-west-2"
     ):
-        """Initialize the BedrockAgent with required parameters.
-
-        Args:
-            session_id: Unique identifier for the session
-            model_id: The model identifier to use
-            action_groups: List of action groups configuration
-            instructions: Agent instructions
-            region_name: AWS region name (default: us-west-2)
-        """
+        """Initialize the BedrockAgent with required parameters."""
         self.session_id = session_id
         self.model_id = model_id
         self.action_groups = action_groups
@@ -35,53 +45,35 @@ class BedrockAgent:
             region_name=region_name
         )
 
-    def _process_response_stream(self, response) -> Tuple[str, bool]:
-        """Process the response stream from bedrock agent.
+    def _process_response_chunk(self, chunk: Dict) -> AgentEvent:
+        """Process a single chunk from the response stream and convert it to an AgentEvent."""
+        if 'chunk' in chunk:
+            return AgentEvent(
+                type=EventType.CHUNK,
+                data=chunk['chunk']['bytes'].decode('utf-8')
+            )
+        elif "trace" in chunk:
+            return AgentEvent(
+                type=EventType.TRACE,
+                data=chunk['trace']['trace']['orchestrationTrace']
+            )
+        elif 'returnControl' in chunk:
+            return AgentEvent(
+                type=EventType.FUNCTION_CALL,
+                data=chunk['returnControl']
+            )
+        else:
+            return AgentEvent(
+                type=EventType.ERROR,
+                data=f"Unidentified chunk: {chunk}"
+            )
 
-        Args:
-            response: The response from invoke_inline_agent
-
-        Returns:
-            Tuple containing (output string, boolean indicating if it's a function call)
-        """
-        output = ""
-        is_function_call = False
-
-        for chunk in response['completion']:
-            if 'chunk' in chunk:
-                output += chunk['chunk']['bytes'].decode('utf-8')
-            elif "trace" in chunk:
-                print(f"Trace: {chunk['trace']['trace']['orchestrationTrace']}")
-            elif 'returnControl' in chunk:
-                output = chunk['returnControl']
-                is_function_call = True
-            else:
-                print(chunk)
-
-        return output, is_function_call
-
-    def invoke_agent(
-            self,
-            input_text: str,
-            session_attributes: Dict[str, Any],
-            function_result: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Invoke the bedrock agent with given input and handle function calls.
-
-        Args:
-            input_text: The input text to send to the agent
-            session_attributes: Dictionary of session attributes
-            function_result: Optional function result from previous invocation
-
-        Returns:
-            The agent's response as a string
-        """
-        # Prepare the session state
+    def _prepare_session_state(self, session_attributes: Dict[str, Any], function_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Prepare the session state dictionary."""
         session_state = {
             'promptSessionAttributes': session_attributes,
         }
 
-        # If we have function results from a previous invocation, include them
         if function_result and self.invocation_id:
             session_state.update({
                 'invocationId': self.invocation_id,
@@ -90,7 +82,23 @@ class BedrockAgent:
                 }]
             })
 
-        # Invoke the agent
+        return session_state
+
+    def invoke_agent(
+            self,
+            input_text: str,
+            session_attributes: Dict[str, Any],
+            function_result: Optional[Dict[str, Any]] = None
+    ) -> Generator[AgentEvent, None, None]:
+        """Synchronous version of invoke_agent."""
+        session_state = self._prepare_session_state(session_attributes, function_result)
+
+        if function_result:
+            yield AgentEvent(
+                type=EventType.FUNCTION_RESULT,
+                data=function_result
+            )
+
         response = self.bedrock_rt_client.invoke_inline_agent(
             instruction=self.instructions,
             foundationModel=self.model_id,
@@ -102,32 +110,46 @@ class BedrockAgent:
             actionGroups=self.action_groups
         )
 
-        # Process the response
-        output, is_function_call = self._process_response_stream(response)
+        output = ""
+        function_call = None
 
-        # If it's a function call, parse and execute it
-        if is_function_call:
-            function_to_call = parse_function_parameters(output)
+        for chunk in response['completion']:
+            event = self._process_response_chunk(chunk)
+            yield event
+
+            if event.type == EventType.CHUNK:
+                output += event.data
+            elif event.type == EventType.FUNCTION_CALL:
+                function_call = event.data
+
+        if function_call:
+            function_to_call = parse_function_parameters(function_call)
             self.invocation_id = function_to_call.get('invocationId')
 
-            if function_to_call['function'] == 'search_near':
-                data, error = invoke_tool(function_to_call)
+            data, error = invoke_tool(function_to_call)
 
-                if error:
-                    return f"Error: {error}"
+            if error:
+                yield AgentEvent(
+                    type=EventType.ERROR,
+                    data=error
+                )
+                return
 
-                # Make a second call with the function results
-                function_result = {
-                    'actionGroup': function_to_call['actionGroup'],
-                    'function': function_to_call['function'],
-                    'responseBody': {
-                        'TEXT': {
-                            'body': json.dumps(data, indent=2)
-                        }
+            function_result = {
+                'actionGroup': function_to_call['actionGroup'],
+                'function': function_to_call['function'],
+                'responseBody': {
+                    'TEXT': {
+                        'body': json.dumps(data, indent=2)
                     }
                 }
+            }
 
-                return self.invoke_agent(" ", session_attributes, function_result)
-
-        return output
-
+            # Recursively call invoke_agent with the function results
+            for event in self.invoke_agent(" ", session_attributes, function_result):
+                yield event
+        else:
+            yield AgentEvent(
+                type=EventType.COMPLETION,
+                data=output
+            )
