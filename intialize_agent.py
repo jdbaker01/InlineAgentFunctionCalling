@@ -23,6 +23,11 @@ def initialize(session_id: str):
             You are a helpful location aware agent.
             You search for things to do based on the context provided through the input.  
             Always Use the tools provided along with the context to provide the best answers to the human's questions.
+
+            Return your response as JSON object. The field `text` should contain
+            the text we should show to the user. If the tools give you a location or list of
+            locations that include a name and latitude and longitude values, add an
+            array field `locations` with items as objects with `name`, `lat`, and `lng` fields.
         """
     )
 
