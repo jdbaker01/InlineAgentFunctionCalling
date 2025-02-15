@@ -1,5 +1,6 @@
 import folium
 import json
+import re
 import streamlit as st
 import uuid
 from enum import Enum
@@ -20,7 +21,7 @@ class State(str, Enum):
     FINISH = "FINISH"
     ROC = "ROC"
 
-def parse_message(message):
+def parse_json_message(message):
     try:
         data = json.loads(message)
         text = data.get("text", message)
@@ -28,6 +29,25 @@ def parse_message(message):
     except (json.JSONDecodeError, TypeError):
         text = message
         locations = None
+    return text, locations
+
+def parse_tagged_message(message):
+    pattern = re.compile(r'<place id="(?P<id>[^"]+)" lat=(?P<lat>[^ ]+) lng=(?P<lng>[^ ]+)>(?P<name>[^<]+)</place>')
+
+    locations = []
+    def replace_tag(match):
+        location = {
+            'id': match.group('id'),
+            'lat': float(match.group('lat')),
+            'lng': float(match.group('lng')),
+            'name': match.group('name')
+        }
+        locations.append(location)
+        return f'<a href="https://foursquare.com/v/{location["id"]}" target="_blank" rel="noreferrer nofollow noopener">{location["name"]}</a>'
+
+    # Replace the tags in the message and collect location data
+    text = pattern.sub(replace_tag, message)
+
     return text, locations
 
 def create_map(locations):
@@ -56,12 +76,16 @@ def generate_response_from_agent(input_text: str, final_text_placeholder, map_pl
         else:
             completion_event = event
 
-    text, locations = parse_message(completion_event.data)
+    text, locations = parse_tagged_message(completion_event.data)
 
     with final_text_placeholder:
         with st.container(border=True):
-            with st.chat_message(name="assistant"):
-                st.write(f"Assistant: {text}")
+            scrolling_html = f"""
+            <div style="max-height: 200px; overflow: auto;">
+                {text}
+            </div>
+            """
+            st.components.v1.html(scrolling_html, height=200)
 
     if locations:
         map_object = create_map(locations)
