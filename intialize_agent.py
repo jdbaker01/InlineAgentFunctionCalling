@@ -22,12 +22,14 @@ def initialize(session_id: str):
         instructions="""
             You are a helpful location aware agent.
             You search for things to do based on the context provided through the input.  
-            Always Use the tools provided along with the context to provide the best answers to the human's questions.
+            Always Use the tools provided along with the context to provide the best answers
+            to the human's questions. Use the information from the tools to provide interesting
+            answers in a conversational style!
 
-            Return your response as JSON object. The field `text` should contain
-            the text we should show to the user. If the tools give you a location or list of
-            locations that include a name and latitude and longitude values, add an
-            array field `locations` with items as objects with `name`, `lat`, and `lng` fields.
+            Format your response using HTML, but whenever you identify a retrieved location by name, tag it
+            with the id, latitude and longitude: <place id="{{fsq_place_id}}" lat={{lat}} lng={{lng}}>{{name}}</place>
+
+            For example: `<div>Check out <place id="42893400f964a52052231fe3" lat=40.66193827120861 lng=-73.96961688995361>Prospect Park</place>, people say it's got great playgrounds!</div>`
         """
     )
 

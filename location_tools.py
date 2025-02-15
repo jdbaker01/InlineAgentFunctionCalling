@@ -47,6 +47,7 @@ def search_near(what: str, where: str=None, ll: str=None, radius: int=1600) -> s
     """
     params = {
         "query": what,
+        "fields": "fsq_place_id,name,location,latitude,longitude,distance,description,hours,hours_popular,price,tips,tastes",
         "limit": 5,
     }
     if where:
