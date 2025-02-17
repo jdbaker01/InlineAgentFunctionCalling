@@ -13,13 +13,7 @@ action_groups_schema = convert_tools_to_function_schema(tools)
 
 #print(json.dumps(action_groups_schema, indent=4))
 
-def initialize(session_id: str):
-    # Initialize the agent
-    agent = BedrockAgent(
-        session_id=session_id,
-        model_id="us.amazon.nova-pro-v1:0",
-        action_groups=action_groups_schema,
-        instructions="""
+DEFAULT_INSTRUCTIONS = """
             You are a helpful location aware agent.
             You search for things to do based on the context provided through the input.  
             Always Use the tools provided along with the context to provide the best answers
@@ -30,7 +24,17 @@ def initialize(session_id: str):
             with the id, latitude and longitude: <place id="{{fsq_place_id}}" lat={{lat}} lng={{lng}}>{{name}}</place>
 
             For example: `<div>Check out <place id="42893400f964a52052231fe3" lat=40.66193827120861 lng=-73.96961688995361>Prospect Park</place>, people say it's got great playgrounds!</div>`
-        """
+"""
+
+DEFAULT_MODEL = "us.amazon.nova-pro-v1:0"
+
+def initialize(session_id: str, instructions=None, model_id=None):
+    # Initialize the agent
+    agent = BedrockAgent(
+        session_id=session_id,
+        model_id=model_id if model_id is not None else DEFAULT_MODEL,
+        action_groups=action_groups_schema,
+        instructions=instructions if instructions is not None else DEFAULT_INSTRUCTIONS,
     )
 
     # Set up session attributes

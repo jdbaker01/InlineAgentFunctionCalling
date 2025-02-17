@@ -84,6 +84,10 @@ class BedrockAgent:
 
         return session_state
 
+    @classmethod
+    def get_available_models(self):
+        return ("us.amazon.nova-pro-v1:0", "us.anthropic.claude-3-5-sonnet-20240620-v1:0")
+
     def invoke_agent(
             self,
             input_text: str,
