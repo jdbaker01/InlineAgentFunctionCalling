@@ -127,8 +127,9 @@ with chat_tab:
 
 with config_tab:
     with st.container(border=True):
-        instructions = st.text_area("Instructions", value=st.session_state[INSTRUCTIONS_KEY].strip())
+        instructions = st.text_area("Instructions", value=st.session_state.get(INSTRUCTIONS_KEY, '').strip())
 
+        selected_model_idx = 0
         if st.session_state.get(MODEL_ID_KEY):
             selected_model_idx = next(
                 (idx for idx, model_id in enumerate(BedrockAgent.get_available_models())
