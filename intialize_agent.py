@@ -5,6 +5,7 @@ import uuid
 from bedrock_agent_helper import BedrockAgent
 from function_calls import get_bedrock_tools, convert_tools_to_function_schema
 from location_tools import search_near
+from weather_tools import get_weather
 
 
 # Get the bedrock tools and convert to function schema
