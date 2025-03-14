@@ -7,7 +7,7 @@ import httpx
 from function_calls import bedrock_agent_tool, get_bedrock_tools
 import json
 
-FSQ_V20241206_API_BASE = "https://places-api.foursquare.com"
+FSQ_PLACES_API_BASE = "https://places-api.foursquare.com"
 
 FSQ_SERVICE_TOKEN = os.getenv("FOURSQUARE_SERVICE_TOKEN")
 
@@ -17,7 +17,7 @@ def submit_request(endpoint: str, params: dict[str, str]) -> str:
         "X-Places-Api-Version": "2025-02-05"
     }
     encoded_params = urlencode(params)
-    url = f"{FSQ_V20241206_API_BASE}{endpoint}?{encoded_params}"
+    url = f"{FSQ_PLACES_API_BASE}{endpoint}?{encoded_params}"
     with httpx.Client() as client:
         try:
             print(url)
